@@ -10,6 +10,7 @@ const state = {
   scale: 1.25,
   pagesPerView: 1,
   annotations: [], // { id, pageNum, pdfPoint: {x,y}, memo, aiExplanation, aiStatus }
+  deletedImported: [], // { pageNum, importedRect, importedOriginalContents } — imported annots removed this session
 };
 
 const els = {
@@ -56,6 +57,7 @@ els.fileInput.addEventListener('change', async (e) => {
   const buf = await file.arrayBuffer();
   state.originalBytes = buf.slice(0);
   state.annotations = [];
+  state.deletedImported = [];
   openPopoverId = null;
   els.popover.style.display = 'none';
   hasUnsavedChanges = false;
@@ -539,6 +541,14 @@ function renderSidebar() {
 }
 
 function deleteAnnotation(id) {
+  const ann = state.annotations.find((a) => a.id === id);
+  if (ann && ann.imported) {
+    state.deletedImported.push({
+      pageNum: ann.pageNum,
+      importedRect: ann.importedRect,
+      importedOriginalContents: ann.importedOriginalContents,
+    });
+  }
   state.annotations = state.annotations.filter((a) => a.id !== id);
   hasUnsavedChanges = true;
   document.querySelectorAll(`.pin-mark[data-note-id="${id}"]`).forEach((el) => el.remove());
@@ -575,7 +585,7 @@ async function saveAnnotatedPdf() {
     return parts.join('\n\n');
   }
 
-  function findMatchingAnnotDict(page, rect, originalContents) {
+  function findMatchingAnnot(page, rect, originalContents) {
     const annotsArray = page.node.lookup(PDFName.of('Annots'));
     if (!(annotsArray instanceof PDFArray)) return null;
     for (let i = 0; i < annotsArray.size(); i++) {
@@ -587,11 +597,20 @@ async function saveAnnotatedPdf() {
       const rectNums = rectObj.asArray().map((n) => n.asNumber());
       const sameRect = rect.every((v, i2) => Math.abs(v - rectNums[i2]) < 0.01);
       if (sameRect && contentsObj.decodeText() === originalContents) {
-        return dict;
+        return { array: annotsArray, index: i, dict };
       }
     }
     return null;
   }
+
+  // Annotations the user deleted this session (that came from the original
+  // file) need to be removed from the saved copy, not just left alone.
+  state.deletedImported.forEach((del) => {
+    const page = pages[del.pageNum - 1];
+    if (!page) return;
+    const match = findMatchingAnnot(page, del.importedRect, del.importedOriginalContents);
+    if (match) match.array.remove(match.index);
+  });
 
   state.annotations.forEach((ann) => {
     const page = pages[ann.pageNum - 1];
@@ -605,9 +624,9 @@ async function saveAnnotatedPdf() {
         ann.aiExplanation === ann.importedSnapshot.aiExplanation;
       if (unchanged) return; // leave the original annotation's bytes untouched
 
-      const existingDict = findMatchingAnnotDict(page, ann.importedRect, ann.importedOriginalContents);
-      if (existingDict) {
-        existingDict.set(PDFName.of('Contents'), PDFHexString.fromText(contents));
+      const existingMatch = findMatchingAnnot(page, ann.importedRect, ann.importedOriginalContents);
+      if (existingMatch) {
+        existingMatch.dict.set(PDFName.of('Contents'), PDFHexString.fromText(contents));
         return;
       }
       // Couldn't find the original (e.g. file changed elsewhere) — fall through
