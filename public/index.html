@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ForStudyPdf - PDF 학습 노트</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="toolbar">
+    <div class="toolbar-left">
+      <label class="file-btn">
+        PDF 열기
+        <input type="file" id="fileInput" accept="application/pdf" hidden />
+      </label>
+      <span id="fileNameLabel" class="file-name">불러온 파일 없음</span>
+    </div>
+    <div class="toolbar-center">
+      <button id="zoomOutBtn" title="축소">－</button>
+      <span id="zoomLabel">100%</span>
+      <button id="zoomInBtn" title="확대">＋</button>
+      <span class="page-indicator">
+        <input type="number" id="pageJumpInput" min="1" title="페이지로 이동" />
+        <span class="page-indicator-sep">/</span>
+        <span id="totalPagesLabel">-</span>
+      </span>
+    </div>
+    <div class="toolbar-right">
+      <button id="toggleSidebarBtn">메모 목록</button>
+      <button id="saveBtn" class="primary-btn">PDF로 저장</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section id="viewer" class="viewer">
+      <p class="empty-hint">왼쪽 위 "PDF 열기"로 전공서 PDF를 불러오세요.<br />원하는 위치를 클릭하면 메모를 남길 수 있습니다.<br />Ctrl + 휠로 확대/축소할 수 있습니다.</p>
+    </section>
+
+    <aside id="sidebar" class="sidebar collapsed">
+      <h2>내 메모 &amp; AI 설명</h2>
+      <div id="sidebarList">
+        <p class="empty-hint">아직 남긴 메모가 없습니다.</p>
+      </div>
+    </aside>
+  </main>
+
+  <div id="memoPopup" class="memo-popup">
+    <span class="popup-label">이 위치에 메모 남기기</span>
+    <textarea placeholder="이 부분에 대한 내 메모를 입력하세요..." rows="3"></textarea>
+    <div class="popup-actions">
+      <button class="btn-cancel">취소</button>
+      <button class="btn-save primary-btn">저장 + AI 설명 요청</button>
+    </div>
+  </div>
+
+  <div id="notePopover" class="note-popover"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "forstudypdf",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PDF 교재에 메모를 남기면 AI가 추가 설명을 붙여주고, 다시 PDF로 저장하는 학습 도구",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}

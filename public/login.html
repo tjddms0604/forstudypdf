@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ForStudyPdf - 로그인</title>
+<style>
+  :root {
+    --bg: #faf6ec;
+    --panel: #fffdf8;
+    --border: #e8dfc9;
+    --text: #34302a;
+    --muted: #8c8272;
+    --accent: #f2994a;
+    --accent-dark: #d97f31;
+    --danger: #c0503f;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    font-family: "Pretendard", "Malgun Gothic", system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card {
+    width: 320px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 24px;
+    box-shadow: 0 6px 20px rgba(52, 48, 42, 0.12);
+  }
+  .card h1 {
+    font-size: 17px;
+    margin: 0 0 6px;
+  }
+  .card p {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 0 18px;
+  }
+  input[type="password"] {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  button {
+    width: 100%;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 0;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: var(--accent-dark); }
+  .error {
+    color: var(--danger);
+    font-size: 13px;
+    margin-top: 10px;
+    min-height: 1em;
+  }
+</style>
+</head>
+<body>
+  <form class="card" id="loginForm">
+    <h1>ForStudyPdf</h1>
+    <p>비밀번호를 입력하면 이용할 수 있습니다.</p>
+    <input type="password" id="passwordInput" placeholder="비밀번호" autofocus />
+    <button type="submit">입장하기</button>
+    <div class="error" id="errorMsg"></div>
+  </form>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const input = document.getElementById('passwordInput');
+    const errorMsg = document.getElementById('errorMsg');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.textContent = '';
+      const password = input.value;
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorMsg.textContent = data.error || '로그인에 실패했습니다.';
+          return;
+        }
+        window.location.href = '/';
+      } catch (err) {
+        errorMsg.textContent = '서버에 연결할 수 없습니다.';
+      }
+    });
+  </script>
+</body>
+</html>
