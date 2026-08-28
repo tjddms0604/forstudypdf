@@ -169,10 +169,20 @@ html, body {
   flex: 1;
   overflow: auto;
   padding: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
+}
+
+/* Center with margin:auto rather than flex align-items:center — centering via
+   flex/grid alignment clips the overflow on the start side when zoomed-in
+   content is wider than the viewer, making it unreachable even with
+   overflow:auto. Auto margins degrade to 0 instead, keeping everything
+   scrollable. */
+.viewer > .page-container,
+.viewer > .page-row {
+  margin: 0 auto 20px;
+}
+.viewer > .page-container:last-child,
+.viewer > .page-row:last-child {
+  margin-bottom: 0;
 }
 
 .empty-hint {
