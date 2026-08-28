@@ -8,6 +8,7 @@ const state = {
   originalBytes: null,
   fileName: '',
   scale: 1.25,
+  pagesPerView: 1,
   annotations: [], // { id, pageNum, pdfPoint: {x,y}, memo, aiExplanation, aiStatus }
 };
 
@@ -15,6 +16,8 @@ const els = {
   fileInput: document.getElementById('fileInput'),
   fileNameLabel: document.getElementById('fileNameLabel'),
   viewer: document.getElementById('viewer'),
+  singlePageBtn: document.getElementById('singlePageBtn'),
+  doublePageBtn: document.getElementById('doublePageBtn'),
   sidebar: document.getElementById('sidebar'),
   sidebarList: document.getElementById('sidebarList'),
   toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
@@ -136,12 +139,23 @@ async function renderAllPages() {
   closeNotePopover();
   els.viewer.innerHTML = '';
   const numPages = state.pdfDoc.numPages;
-  for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-    await renderPage(pageNum);
+
+  if (state.pagesPerView === 2) {
+    for (let pageNum = 1; pageNum <= numPages; pageNum += 2) {
+      const row = document.createElement('div');
+      row.className = 'page-row';
+      els.viewer.appendChild(row);
+      await renderPage(pageNum, row);
+      if (pageNum + 1 <= numPages) await renderPage(pageNum + 1, row);
+    }
+  } else {
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      await renderPage(pageNum, els.viewer);
+    }
   }
 }
 
-async function renderPage(pageNum) {
+async function renderPage(pageNum, parentEl) {
   const page = await state.pdfDoc.getPage(pageNum);
   const viewport = page.getViewport({ scale: state.scale });
 
@@ -162,7 +176,7 @@ async function renderPage(pageNum) {
   pageContainer.appendChild(highlightLayerDiv);
   pageContainer._highlightLayer = highlightLayerDiv;
 
-  els.viewer.appendChild(pageContainer);
+  parentEl.appendChild(pageContainer);
 
   const ctx = canvas.getContext('2d');
   await page.render({ canvasContext: ctx, viewport }).promise;
@@ -183,6 +197,19 @@ async function renderPage(pageNum) {
 
   drawHighlightsForPage(pageNum);
 }
+
+async function setPagesPerView(n) {
+  if (state.pagesPerView === n) return;
+  state.pagesPerView = n;
+  els.singlePageBtn.classList.toggle('active', n === 1);
+  els.doublePageBtn.classList.toggle('active', n === 2);
+  if (!state.pdfDoc) return;
+  await renderAllPages();
+  updateCurrentPageIndicator();
+}
+
+els.singlePageBtn.addEventListener('click', () => setPagesPerView(1));
+els.doublePageBtn.addEventListener('click', () => setPagesPerView(2));
 
 async function applyZoom(nextScale) {
   state.scale = Math.min(3, Math.max(0.5, nextScale));

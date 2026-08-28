@@ -88,6 +88,33 @@ html, body {
 }
 .primary-btn:hover { background: var(--accent-dark) !important; }
 
+.view-mode-group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.view-mode-btn {
+  border: none !important;
+  border-radius: 0 !important;
+  background: var(--panel);
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.view-mode-btn + .view-mode-btn {
+  border-left: 1px solid var(--border) !important;
+}
+.view-mode-btn:hover {
+  background: var(--accent-soft) !important;
+}
+.view-mode-btn.active {
+  background: var(--accent) !important;
+  color: #fff;
+  font-weight: 600;
+}
+
 #zoomLabel {
   font-size: 13px;
   color: var(--muted);
@@ -153,6 +180,13 @@ html, body {
   text-align: center;
   margin-top: 60px;
   line-height: 1.6;
+}
+
+.page-row {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  gap: 16px;
 }
 
 .page-container {
