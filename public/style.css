@@ -197,6 +197,12 @@ html, body {
   flex-direction: row;
   flex-shrink: 0;
   gap: 16px;
+  /* Without an explicit width, a block-level flex container fills the whole
+     .viewer, leaving margin:auto nothing to center with — the two pages then
+     just pack to the left inside that full-width box. max-content makes the
+     row's own box hug its children instead, so centering (and, when zoomed
+     in, the overflow-safe scrolling) actually has something to work with. */
+  width: max-content;
 }
 
 .page-container {
