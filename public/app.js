@@ -136,7 +136,17 @@ async function importExistingAnnotations() {
 
 // ---------- Rendering ----------
 
+// Guards against overlapping renders: if the user switches view mode (or
+// opens another file) before a big PDF finishes rendering, the previous,
+// now-stale renderAllPages() call keeps running in the background — since
+// nothing ever awaited/cancelled it — and its pages get appended to the same
+// live #viewer element interleaved with the new render, scrambling page
+// order. Each call captures its own generation number and checks it's still
+// current before touching the DOM.
+let renderGeneration = 0;
+
 async function renderAllPages() {
+  const myGeneration = ++renderGeneration;
   closeMemoPopup();
   closeNotePopover();
   els.viewer.innerHTML = '';
@@ -144,22 +154,26 @@ async function renderAllPages() {
 
   if (state.pagesPerView === 2) {
     for (let pageNum = 1; pageNum <= numPages; pageNum += 2) {
+      if (myGeneration !== renderGeneration) return;
       const row = document.createElement('div');
       row.className = 'page-row';
       els.viewer.appendChild(row);
-      await renderPage(pageNum, row);
-      if (pageNum + 1 <= numPages) await renderPage(pageNum + 1, row);
+      await renderPage(pageNum, row, myGeneration);
+      if (myGeneration !== renderGeneration) return;
+      if (pageNum + 1 <= numPages) await renderPage(pageNum + 1, row, myGeneration);
     }
   } else {
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      await renderPage(pageNum, els.viewer);
+      if (myGeneration !== renderGeneration) return;
+      await renderPage(pageNum, els.viewer, myGeneration);
     }
   }
 }
 
-async function renderPage(pageNum, parentEl) {
+async function renderPage(pageNum, parentEl, myGeneration) {
   const page = await state.pdfDoc.getPage(pageNum);
   const viewport = page.getViewport({ scale: state.scale });
+  if (myGeneration !== renderGeneration) return; // superseded while awaiting getPage()
 
   const pageContainer = document.createElement('div');
   pageContainer.className = 'page-container';
@@ -182,6 +196,7 @@ async function renderPage(pageNum, parentEl) {
 
   const ctx = canvas.getContext('2d');
   await page.render({ canvasContext: ctx, viewport }).promise;
+  if (myGeneration !== renderGeneration) return; // superseded mid-render
 
   canvas.addEventListener('click', (e) => {
     const rect = canvas.getBoundingClientRect();
