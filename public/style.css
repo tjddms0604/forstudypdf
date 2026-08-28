@@ -286,7 +286,22 @@ html, body {
 }
 
 .note-ai.idle {
-  display: none;
+  background: none;
+  padding: 0;
+}
+
+.request-ai-btn {
+  border: 1px solid var(--accent);
+  background: #fff;
+  color: var(--accent-dark);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.request-ai-btn:hover {
+  background: var(--accent-soft);
 }
 
 .ai-tag {

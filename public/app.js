@@ -65,10 +65,69 @@ els.fileInput.addEventListener('change', async (e) => {
   els.totalPagesLabel.textContent = String(state.pdfDoc.numPages);
   els.pageJumpInput.max = String(state.pdfDoc.numPages);
 
+  await importExistingAnnotations();
   await renderAllPages();
   renderSidebar();
   updateCurrentPageIndicator();
 });
+
+// ---------- Importing annotations already present in the PDF ----------
+
+const MEMO_MARKER = '[내 메모]\n';
+const AI_MARKER = '\n\n[AI 설명]\n';
+const NOTE_SUBTYPES = new Set(['Text', 'FreeText', 'Highlight', 'Underline', 'Squiggly', 'StrikeOut']);
+
+function parseAnnotationContents(raw) {
+  const text = (raw || '').trim();
+  if (text.startsWith(MEMO_MARKER)) {
+    const aiIdx = text.indexOf(AI_MARKER);
+    if (aiIdx !== -1) {
+      return {
+        memo: text.slice(MEMO_MARKER.length, aiIdx).trim(),
+        aiExplanation: text.slice(aiIdx + AI_MARKER.length).trim(),
+        aiStatus: 'done',
+      };
+    }
+    return { memo: text.slice(MEMO_MARKER.length).trim(), aiExplanation: '', aiStatus: 'idle' };
+  }
+  // Not our own format (e.g. an annotation made in another PDF reader) — treat
+  // the whole thing as the memo text, ready to have an AI explanation added.
+  return { memo: text, aiExplanation: '', aiStatus: 'idle' };
+}
+
+async function importExistingAnnotations() {
+  let counter = 0;
+  for (let pageNum = 1; pageNum <= state.pdfDoc.numPages; pageNum++) {
+    const page = await state.pdfDoc.getPage(pageNum);
+    const pdfAnnotations = await page.getAnnotations();
+
+    pdfAnnotations.forEach((pdfAnn) => {
+      const contentsStr = pdfAnn.contentsObj && pdfAnn.contentsObj.str;
+      if (!contentsStr || !contentsStr.trim()) return;
+      if (!NOTE_SUBTYPES.has(pdfAnn.subtype)) return;
+      if (!Array.isArray(pdfAnn.rect) || pdfAnn.rect.length !== 4) return;
+
+      const { memo, aiExplanation, aiStatus } = parseAnnotationContents(contentsStr);
+      if (!memo) return;
+
+      const [x1, y1, x2, y2] = pdfAnn.rect;
+      counter += 1;
+
+      state.annotations.push({
+        id: 'imported-' + pageNum + '-' + counter,
+        pageNum,
+        pdfPoint: { x: (x1 + x2) / 2, y: (y1 + y2) / 2 },
+        memo,
+        aiExplanation,
+        aiStatus,
+        imported: true,
+        importedRect: pdfAnn.rect,
+        importedOriginalContents: contentsStr.trim(),
+        importedSnapshot: { aiStatus, aiExplanation },
+      });
+    });
+  }
+}
 
 // ---------- Rendering ----------
 
@@ -269,6 +328,16 @@ document.addEventListener('keydown', (e) => {
   if (openPopoverId) closeNotePopover();
 });
 
+async function triggerAiExplanation(ann) {
+  ann.aiStatus = 'loading';
+  hasUnsavedChanges = true;
+  renderSidebar();
+  renderNotePopover();
+  await requestAiExplanation(ann);
+  renderSidebar();
+  renderNotePopover();
+}
+
 async function requestAiExplanation(annotation) {
   try {
     const res = await fetch('/api/explain', {
@@ -345,14 +414,7 @@ function renderNotePopover() {
     return;
   }
 
-  const aiBody =
-    ann.aiStatus === 'loading'
-      ? '<span class="spinner"></span>AI 설명 생성 중...'
-      : ann.aiStatus === 'done'
-      ? '<span class="ai-tag">AI</span>' + escapeHtml(ann.aiExplanation)
-      : ann.aiStatus === 'error'
-      ? escapeHtml(ann.aiExplanation)
-      : '';
+  const aiBody = aiStatusBody(ann);
 
   els.popover.innerHTML = `
     <div class="popover-header">
@@ -370,6 +432,15 @@ function renderNotePopover() {
     deleteAnnotation(ann.id);
     closeNotePopover();
   });
+  const requestBtn = els.popover.querySelector('.request-ai-btn');
+  if (requestBtn) requestBtn.addEventListener('click', () => triggerAiExplanation(ann));
+}
+
+function aiStatusBody(ann) {
+  if (ann.aiStatus === 'loading') return '<span class="spinner"></span>AI 설명 생성 중...';
+  if (ann.aiStatus === 'done') return '<span class="ai-tag">AI</span>' + escapeHtml(ann.aiExplanation);
+  if (ann.aiStatus === 'error') return escapeHtml(ann.aiExplanation);
+  return '<button class="request-ai-btn">AI 설명 요청</button>';
 }
 
 document.addEventListener('click', (e) => {
@@ -405,14 +476,7 @@ function renderSidebar() {
       card.className = 'note-card';
       card.dataset.noteId = ann.id;
 
-      const aiBody =
-        ann.aiStatus === 'loading'
-          ? '<span class="spinner"></span>AI 설명 생성 중...'
-          : ann.aiStatus === 'done'
-          ? '<span class="ai-tag">AI</span>' + escapeHtml(ann.aiExplanation)
-          : ann.aiStatus === 'error'
-          ? escapeHtml(ann.aiExplanation)
-          : '';
+      const aiBody = aiStatusBody(ann);
 
       card.innerHTML = `
         <div class="note-header">
@@ -427,6 +491,14 @@ function renderSidebar() {
         e.stopPropagation();
         deleteAnnotation(ann.id);
       });
+
+      const requestBtn = card.querySelector('.request-ai-btn');
+      if (requestBtn) {
+        requestBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          triggerAiExplanation(ann);
+        });
+      }
 
       card.addEventListener('click', () => {
         const pageContainer = els.viewer.querySelector(
@@ -463,23 +535,60 @@ async function saveAnnotatedPdf() {
     return;
   }
 
-  const { PDFDocument, PDFName, PDFArray, PDFHexString } = PDFLib;
+  const { PDFDocument, PDFName, PDFArray, PDFDict, PDFHexString } = PDFLib;
   const pdfDoc = await PDFDocument.load(state.originalBytes.slice(0));
   const pages = pdfDoc.getPages();
   const context = pdfDoc.context;
+
+  function buildContents(ann) {
+    const parts = ['[내 메모]\n' + ann.memo];
+    if (ann.aiExplanation && ann.aiStatus === 'done') {
+      parts.push('[AI 설명]\n' + ann.aiExplanation);
+    }
+    return parts.join('\n\n');
+  }
+
+  function findMatchingAnnotDict(page, rect, originalContents) {
+    const annotsArray = page.node.lookup(PDFName.of('Annots'));
+    if (!(annotsArray instanceof PDFArray)) return null;
+    for (let i = 0; i < annotsArray.size(); i++) {
+      const dict = context.lookup(annotsArray.get(i));
+      if (!(dict instanceof PDFDict)) continue;
+      const rectObj = dict.lookup(PDFName.of('Rect'));
+      const contentsObj = dict.lookup(PDFName.of('Contents'));
+      if (!rectObj || !contentsObj) continue;
+      const rectNums = rectObj.asArray().map((n) => n.asNumber());
+      const sameRect = rect.every((v, i2) => Math.abs(v - rectNums[i2]) < 0.01);
+      if (sameRect && contentsObj.decodeText() === originalContents) {
+        return dict;
+      }
+    }
+    return null;
+  }
 
   state.annotations.forEach((ann) => {
     const page = pages[ann.pageNum - 1];
     if (!page) return;
 
+    const contents = buildContents(ann);
+
+    if (ann.imported) {
+      const unchanged =
+        ann.aiStatus === ann.importedSnapshot.aiStatus &&
+        ann.aiExplanation === ann.importedSnapshot.aiExplanation;
+      if (unchanged) return; // leave the original annotation's bytes untouched
+
+      const existingDict = findMatchingAnnotDict(page, ann.importedRect, ann.importedOriginalContents);
+      if (existingDict) {
+        existingDict.set(PDFName.of('Contents'), PDFHexString.fromText(contents));
+        return;
+      }
+      // Couldn't find the original (e.g. file changed elsewhere) — fall through
+      // and add it as a new annotation instead of silently dropping the note.
+    }
+
     const { x, y } = ann.pdfPoint;
     const half = 11; // sticky-note icon half-size, in PDF points
-
-    const contentsParts = ['[내 메모]\n' + ann.memo];
-    if (ann.aiExplanation && ann.aiStatus === 'done') {
-      contentsParts.push('[AI 설명]\n' + ann.aiExplanation);
-    }
-    const contents = contentsParts.join('\n\n');
 
     const noteDict = context.obj({
       Type: 'Annot',
