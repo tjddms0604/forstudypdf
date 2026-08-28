@@ -510,13 +510,13 @@ function renderSidebar() {
       card.innerHTML = `
         <div class="note-header">
           <span class="note-page">p.${ann.pageNum}</span>
-          <button class="note-delete" title="삭제">×</button>
         </div>
         <div class="note-memo">${escapeHtml(ann.memo)}</div>
         <div class="note-ai ${ann.aiStatus}">${aiBody}</div>
+        <button class="card-delete-btn">이 메모 삭제</button>
       `;
 
-      card.querySelector('.note-delete').addEventListener('click', (e) => {
+      card.querySelector('.card-delete-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         deleteAnnotation(ann.id);
       });

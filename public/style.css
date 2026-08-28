@@ -303,16 +303,18 @@ html, body {
   border-radius: 10px;
 }
 
-.note-delete {
-  border: none;
-  background: none;
-  color: var(--muted);
-  font-size: 16px;
+.card-delete-btn {
+  margin-top: 10px;
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--danger);
+  border-radius: 6px;
+  padding: 6px 0;
   cursor: pointer;
-  line-height: 1;
-  padding: 0 4px;
+  font-size: 13px;
 }
-.note-delete:hover { color: var(--danger); }
+.card-delete-btn:hover { background: #f6e2dd; }
 
 .note-memo {
   font-size: 14px;
