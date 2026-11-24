@@ -80,6 +80,12 @@ html, body {
 }
 .toolbar button:hover { background: var(--accent-soft); border-color: var(--accent); }
 
+#toggleAiBtn { white-space: nowrap; }
+#toggleAiBtn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
 .primary-btn {
   background: var(--accent) !important;
   color: #fff !important;

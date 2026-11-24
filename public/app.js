@@ -9,6 +9,7 @@ const state = {
   fileName: '',
   scale: 1.25,
   pagesPerView: 1,
+  aiEnabled: true,
   annotations: [], // { id, pageNum, pdfPoint: {x,y}, memo, aiExplanation, aiStatus }
   deletedImported: [], // { pageNum, importedRect, importedOriginalContents } — imported annots removed this session
 };
@@ -20,7 +21,9 @@ const els = {
   singlePageBtn: document.getElementById('singlePageBtn'),
   doublePageBtn: document.getElementById('doublePageBtn'),
   sidebar: document.getElementById('sidebar'),
+  sidebarHeading: document.getElementById('sidebarHeading'),
   sidebarList: document.getElementById('sidebarList'),
+  toggleAiBtn: document.getElementById('toggleAiBtn'),
   toggleSidebarBtn: document.getElementById('toggleSidebarBtn'),
   saveBtn: document.getElementById('saveBtn'),
   zoomInBtn: document.getElementById('zoomInBtn'),
@@ -29,12 +32,23 @@ const els = {
   pageJumpInput: document.getElementById('pageJumpInput'),
   totalPagesLabel: document.getElementById('totalPagesLabel'),
   popup: document.getElementById('memoPopup'),
+  memoSaveBtn: document.querySelector('#memoPopup .btn-save'),
   popover: document.getElementById('notePopover'),
 };
 
 let pendingClick = null;
 let openPopoverId = null;
 let hasUnsavedChanges = false;
+
+els.toggleAiBtn.addEventListener('click', () => {
+  state.aiEnabled = !state.aiEnabled;
+  els.toggleAiBtn.setAttribute('aria-pressed', String(state.aiEnabled));
+  els.toggleAiBtn.textContent = state.aiEnabled ? 'AI 설명 켜짐' : 'AI 설명 꺼짐';
+  els.memoSaveBtn.textContent = state.aiEnabled ? '저장 + AI 설명 요청' : '저장';
+  els.sidebarHeading.textContent = state.aiEnabled ? '내 메모 & AI 설명' : '내 메모';
+  renderSidebar();
+  renderNotePopover();
+});
 
 // Warn before leaving the page if there are memos that haven't been saved to a PDF yet.
 // Browsers don't allow a custom dialog/button here — only their own native
@@ -332,11 +346,11 @@ els.popup.querySelector('.btn-cancel').addEventListener('click', closeMemoPopup)
 els.popup.querySelector('textarea').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    els.popup.querySelector('.btn-save').click();
+    els.memoSaveBtn.click();
   }
 });
 
-els.popup.querySelector('.btn-save').addEventListener('click', async () => {
+els.memoSaveBtn.addEventListener('click', async () => {
   if (!pendingClick) return;
   const memo = els.popup.querySelector('textarea').value.trim();
   const click = pendingClick;
@@ -351,7 +365,7 @@ els.popup.querySelector('.btn-save').addEventListener('click', async () => {
     pdfPoint: click.pdfPoint,
     memo,
     aiExplanation: '',
-    aiStatus: 'loading',
+    aiStatus: state.aiEnabled ? 'loading' : 'idle',
   };
   state.annotations.push(annotation);
   hasUnsavedChanges = true;
@@ -361,9 +375,7 @@ els.popup.querySelector('.btn-save').addEventListener('click', async () => {
   const pos = annotationScreenPos(annotation);
   if (pos) showNotePopover(annotation.id, pos.pageContainer, pos.x, pos.y);
 
-  await requestAiExplanation(annotation);
-  renderSidebar();
-  renderNotePopover();
+  if (state.aiEnabled) await finishAiExplanation(annotation);
 });
 
 document.addEventListener('keydown', (e) => {
@@ -373,10 +385,15 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function triggerAiExplanation(ann) {
+  if (!state.aiEnabled || ann.aiStatus === 'loading') return;
   ann.aiStatus = 'loading';
   hasUnsavedChanges = true;
   renderSidebar();
   renderNotePopover();
+  await finishAiExplanation(ann);
+}
+
+async function finishAiExplanation(ann) {
   await requestAiExplanation(ann);
   renderSidebar();
   renderNotePopover();
@@ -458,15 +475,13 @@ function renderNotePopover() {
     return;
   }
 
-  const aiBody = aiStatusBody(ann);
-
   els.popover.innerHTML = `
     <div class="popover-header">
       <span class="note-page">p.${ann.pageNum}</span>
       <button class="popover-close" title="닫기">×</button>
     </div>
     <div class="popover-memo">${escapeHtml(ann.memo)}</div>
-    <div class="note-ai ${ann.aiStatus}">${aiBody}</div>
+    ${renderAiSection(ann)}
     <button class="popover-delete">이 메모 삭제</button>
   `;
   els.popover.style.display = 'block';
@@ -478,6 +493,11 @@ function renderNotePopover() {
   });
   const requestBtn = els.popover.querySelector('.request-ai-btn');
   if (requestBtn) requestBtn.addEventListener('click', () => triggerAiExplanation(ann));
+}
+
+function renderAiSection(ann) {
+  if (!state.aiEnabled) return '';
+  return `<div class="note-ai ${ann.aiStatus}">${aiStatusBody(ann)}</div>`;
 }
 
 function aiStatusBody(ann) {
@@ -492,7 +512,7 @@ document.addEventListener('click', (e) => {
   if (
     els.popover.contains(e.target) ||
     els.popup.contains(e.target) ||
-    e.target.closest('.pin-mark')
+    e.target.closest('.pin-mark, #toggleAiBtn')
   ) {
     return;
   }
@@ -520,14 +540,12 @@ function renderSidebar() {
       card.className = 'note-card';
       card.dataset.noteId = ann.id;
 
-      const aiBody = aiStatusBody(ann);
-
       card.innerHTML = `
         <div class="note-header">
           <span class="note-page">p.${ann.pageNum}</span>
         </div>
         <div class="note-memo">${escapeHtml(ann.memo)}</div>
-        <div class="note-ai ${ann.aiStatus}">${aiBody}</div>
+        ${renderAiSection(ann)}
         <button class="card-delete-btn">이 메모 삭제</button>
       `;
 

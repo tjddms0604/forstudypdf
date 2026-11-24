@@ -31,6 +31,7 @@
       </span>
     </div>
     <div class="toolbar-right">
+      <button id="toggleAiBtn" type="button" aria-label="AI 설명" aria-pressed="true">AI 설명 켜짐</button>
       <button id="toggleSidebarBtn">메모 목록</button>
       <button id="saveBtn" class="primary-btn">PDF로 저장</button>
     </div>
@@ -42,7 +43,7 @@
     </section>
 
     <aside id="sidebar" class="sidebar collapsed">
-      <h2>내 메모 &amp; AI 설명</h2>
+      <h2 id="sidebarHeading">내 메모 &amp; AI 설명</h2>
       <div id="sidebarList">
         <p class="empty-hint">아직 남긴 메모가 없습니다.</p>
       </div>
