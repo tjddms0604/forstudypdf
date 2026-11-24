@@ -243,9 +243,12 @@ html, body {
   border: 2px solid var(--yellow-dark);
   transform: rotate(-45deg);
   pointer-events: auto;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   box-shadow: 0 1px 3px rgba(52, 48, 42, 0.35);
 }
+
+.pin-mark.dragging { cursor: grabbing; z-index: 1; }
 
 .pin-mark::after {
   content: '';

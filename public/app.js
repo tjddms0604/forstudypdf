@@ -439,11 +439,78 @@ function drawHighlightForAnnotation(ann) {
   div.style.top = y + 'px';
   div.dataset.noteId = ann.id;
   div.title = ann.memo || '';
-  div.addEventListener('click', (e) => {
-    e.stopPropagation();
-    showNotePopover(ann.id, pageContainer, x, y);
-  });
+  makePinDraggable(div, ann, pageContainer, x, y);
   layer.appendChild(div);
+}
+
+function makePinDraggable(pin, ann, pageContainer, x, y) {
+  const viewport = pageContainer._viewport;
+  const layer = pageContainer._highlightLayer;
+  let drag = null;
+  let suppressClick = false;
+
+  function placePin(localX, localY) {
+    pin.style.left = localX + 'px';
+    pin.style.top = localY + 'px';
+  }
+
+  pin.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || drag) return;
+    const rect = layer.getBoundingClientRect();
+    drag = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: e.clientX - rect.left - x,
+      offsetY: e.clientY - rect.top - y,
+      x,
+      y,
+    };
+    suppressClick = false;
+    pin.setPointerCapture(e.pointerId);
+  });
+
+  function movePin(e) {
+    if (drag?.pointerId !== e.pointerId) return;
+    if (!suppressClick) {
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 5) return;
+      suppressClick = true;
+      pin.classList.add('dragging');
+      closeMemoPopup();
+      closeNotePopover();
+    }
+    const rect = layer.getBoundingClientRect();
+    drag.x = Math.max(0, Math.min(viewport.width, e.clientX - rect.left - drag.offsetX));
+    drag.y = Math.max(0, Math.min(viewport.height, e.clientY - rect.top - drag.offsetY));
+    placePin(drag.x, drag.y);
+  }
+
+  pin.addEventListener('pointermove', movePin);
+  pin.addEventListener('pointerup', (e) => {
+    if (drag?.pointerId !== e.pointerId) return;
+    movePin(e);
+    if (x !== drag.x || y !== drag.y) {
+      x = drag.x;
+      y = drag.y;
+      const [pdfX, pdfY] = viewport.convertToPdfPoint(x, y);
+      ann.pdfPoint = { x: pdfX, y: pdfY };
+      hasUnsavedChanges = true;
+    }
+    drag = null;
+    pin.classList.remove('dragging');
+  });
+
+  pin.addEventListener('lostpointercapture', (e) => {
+    if (drag?.pointerId !== e.pointerId) return;
+    drag = null;
+    pin.classList.remove('dragging');
+    placePin(x, y);
+  });
+
+  pin.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!suppressClick) showNotePopover(ann.id, pageContainer, x, y);
+  });
 }
 
 function drawHighlightsForPage(pageNum) {
@@ -629,7 +696,7 @@ async function saveAnnotatedPdf() {
       if (!rectObj || !contentsObj) continue;
       const rectNums = rectObj.asArray().map((n) => n.asNumber());
       const sameRect = rect.every((v, i2) => Math.abs(v - rectNums[i2]) < 0.01);
-      if (sameRect && contentsObj.decodeText() === originalContents) {
+      if (sameRect && contentsObj.decodeText().trim() === originalContents) {
         return { array: annotsArray, index: i, dict };
       }
     }
@@ -645,28 +712,52 @@ async function saveAnnotatedPdf() {
     if (match) match.array.remove(match.index);
   });
 
+  // Resolve original references before moving a note onto another note's rectangle.
+  const importedMatches = new Map();
+  state.annotations.filter((ann) => ann.imported).forEach((ann) => {
+    const page = pages[ann.pageNum - 1];
+    if (page) {
+      importedMatches.set(ann.id, findMatchingAnnot(page, ann.importedRect, ann.importedOriginalContents));
+    }
+  });
+
   state.annotations.forEach((ann) => {
     const page = pages[ann.pageNum - 1];
     if (!page) return;
 
     const contents = buildContents(ann);
+    const { x, y } = ann.pdfPoint;
 
     if (ann.imported) {
-      const unchanged =
-        ann.aiStatus === ann.importedSnapshot.aiStatus &&
-        ann.aiExplanation === ann.importedSnapshot.aiExplanation;
-      if (unchanged) return; // leave the original annotation's bytes untouched
+      const [x1, y1, x2, y2] = ann.importedRect;
+      const dx = x - (x1 + x2) / 2;
+      const dy = y - (y1 + y2) / 2;
+      const moved = dx !== 0 || dy !== 0;
+      const contentsChanged =
+        ann.aiStatus !== ann.importedSnapshot.aiStatus ||
+        ann.aiExplanation !== ann.importedSnapshot.aiExplanation;
+      if (!moved && !contentsChanged) return;
 
-      const existingMatch = findMatchingAnnot(page, ann.importedRect, ann.importedOriginalContents);
+      const existingMatch = importedMatches.get(ann.id);
       if (existingMatch) {
-        existingMatch.dict.set(PDFName.of('Contents'), PDFHexString.fromText(contents));
+        const { dict } = existingMatch;
+        if (contentsChanged) dict.set(PDFName.of('Contents'), PDFHexString.fromText(contents));
+        if (moved) {
+          dict.set(PDFName.of('Rect'), context.obj([x1 + dx, y1 + dy, x2 + dx, y2 + dy]));
+          const quadPoints = dict.lookup(PDFName.of('QuadPoints'));
+          if (quadPoints instanceof PDFArray) {
+            const translated = quadPoints.asArray().map(
+              (point, i) => point.asNumber() + (i % 2 ? dy : dx)
+            );
+            dict.set(PDFName.of('QuadPoints'), context.obj(translated));
+          }
+        }
         return;
       }
       // Couldn't find the original (e.g. file changed elsewhere) — fall through
       // and add it as a new annotation instead of silently dropping the note.
     }
 
-    const { x, y } = ann.pdfPoint;
     const half = 11; // sticky-note icon half-size, in PDF points
 
     const noteDict = context.obj({
